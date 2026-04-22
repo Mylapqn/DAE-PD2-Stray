@@ -7,17 +7,19 @@ public class CatMovement : MonoBehaviour
 {
 	[Header("Movement")]
 	[SerializeField] float moveSpeed = 6f;
-	[SerializeField] float acceleration = 12f;  // how fast we reach moveSpeed
-	[SerializeField] float deceleration = 16f;  // how fast we stop
+	[SerializeField] float acceleration = 12f;
+	[SerializeField] float deceleration = 16f;
 
 	[Header("Rotation")]
-	[SerializeField] float rotationSpeed = 12f;  // higher = snappier turn
+	[SerializeField] float rotationSpeed = 12f;
 
 	[Header("Jump & Gravity")]
 	[SerializeField] float jumpHeight = 1.5f;
-	[SerializeField] float gravity = -20f; // tunable, not tied to Physics settings
+	[SerializeField] float gravity = -20f;
 	[SerializeField] float groundedGravity = -2f; // small constant to keep grounded reliable
 	[SerializeField] Transform jumpPrompt;
+	[SerializeField] float minJumpHeight = 0.5f;
+	[SerializeField] float maxJumpDistance = 4f;
 
 	[Header("Camera")]
 	[SerializeField] Transform cameraTransform; // drag main camera here
@@ -27,11 +29,15 @@ public class CatMovement : MonoBehaviour
 	PlayerInputHandler input;
 	CharacterController controller;
 
-	Vector3 velocity;        // current XZ velocity (world space, smoothed)
-	float verticalSpeed;   // Y component handled separately
+	Vector3 velocity;
+	float velocityMultiplier = 1;
+	float verticalSpeed;
 	bool _jumpAvailable = false;
-	Vector3 _jumpPoint = Vector3.zero;
+	Vector3 _jumpTarget = Vector3.zero;
 	bool _isJumping = false;
+	float jumpTime = 0f;
+
+
 
 
 	void Awake()
@@ -48,7 +54,7 @@ public class CatMovement : MonoBehaviour
 		HandleJump();
 
 		// Single Move call per frame — combines XZ + Y
-		CollisionFlags collision = controller.Move((velocity + Vector3.up * verticalSpeed) * Time.deltaTime);
+		CollisionFlags collision = controller.Move((velocity * velocityMultiplier + Vector3.up * verticalSpeed) * Time.deltaTime);
 		if (collision.HasFlag(CollisionFlags.Sides))
 		{
 			//velocity = Vector3.zero;
@@ -59,22 +65,37 @@ public class CatMovement : MonoBehaviour
 
 	void HandleMovement()
 	{
-		// Raw input from handler
-		Vector2 raw = input.MoveInput;
+		if (!_isJumping)
+		{
+			Vector2 raw = input.MoveInput;
 
-		// Build a world-space direction relative to camera
-		// Flatten camera forward so we don't move up/down based on camera pitch
-		Vector3 camForward = Vector3.ProjectOnPlane(cameraTransform.forward, Vector3.up).normalized;
-		Vector3 camRight = Vector3.ProjectOnPlane(cameraTransform.right, Vector3.up).normalized;
+			Vector3 camForward = Vector3.ProjectOnPlane(cameraTransform.forward, Vector3.up).normalized;
+			Vector3 camRight = Vector3.ProjectOnPlane(cameraTransform.right, Vector3.up).normalized;
 
-		Vector3 targetDirection = (camForward * raw.y + camRight * raw.x);
+			Vector3 targetDirection = (camForward * raw.y + camRight * raw.x);
 
-		// Target velocity this frame
-		Vector3 targetVelocity = targetDirection * moveSpeed;
+			Vector3 targetVelocity = targetDirection * moveSpeed;
 
-		// Smoothly accelerate toward target or decelerate to zero
-		float rate = targetVelocity.magnitude > 0.01f ? acceleration : deceleration;
-		velocity = Vector3.MoveTowards(velocity, targetVelocity, rate * Time.deltaTime);
+
+
+			float rate = targetVelocity.magnitude > 0.01f ? acceleration : deceleration;
+			velocity = Vector3.MoveTowards(velocity, targetVelocity, rate * Time.deltaTime);
+
+			Vector3 predictedPosition = transform.position + transform.forward * 0.2f;
+			// If there's no platform surface below and in front of the player, stop movement to prevent walking off edges
+			if (!Physics.Raycast(predictedPosition + Vector3.up * 0.2f, Vector3.down, out RaycastHit hit, 0.4f, LayerMask.GetMask("Platform")))
+			{
+				velocityMultiplier = 0;
+			}
+			else
+			{
+				velocityMultiplier = 1;
+			}
+		}
+		else
+		{
+			velocityMultiplier = 1;
+		}
 	}
 
 	// Gravity
@@ -95,37 +116,43 @@ public class CatMovement : MonoBehaviour
 
 	void HandleJump()
 	{
-		if (input.Jump.Pressed && controller.isGrounded && !_isJumping)
+		if (input.Jump.Held && controller.isGrounded && !_isJumping)
 		{
 			if (_jumpAvailable)
 			{
+				// Start jump
+				controller.excludeLayers = ~0; // disable collisions
 				_isJumping = true;
 				_jumpAvailable = false;
 				jumpPrompt.gameObject.SetActive(false);
-				_jumpPoint.y += 0.2f;
-				Vector3 diff = _jumpPoint - transform.position;
+				// Move jump target up to arc over edge
+				_jumpTarget.y += 0.2f;
+				// Move jump target away from player to ensure reaching platform
+				Vector3 diff = _jumpTarget - transform.position;
 				diff.y = 0f;
-				_jumpPoint += diff.normalized * 0.5f;
+				_jumpTarget += diff.normalized * 0.5f;
 			}
 		}
 
 		if (_isJumping)
 		{
-			velocity = _jumpPoint - transform.position;
+			velocity = _jumpTarget - transform.position;
 			velocity *= 3f;
 			verticalSpeed = velocity.y;
 			velocity.y = 0f;
-			if (Vector3.SqrMagnitude(_jumpPoint - transform.position) < 0.1f)
+			jumpTime += Time.deltaTime;
+			if (Vector3.SqrMagnitude(_jumpTarget - transform.position) < 0.1f || jumpTime >= 4f)
 			{
+				// End jump
+				controller.excludeLayers = 0; // re-enable collisions
 				_isJumping = false;
+				jumpTime = 0f;
 			}
 		}
 
 		// Jump Height formula: v = sqrt(h * -2 * g)
-		//verticalSpeed = Mathf.Sqrt(jumpHeight * -2f * gravity);
+		// verticalSpeed = Mathf.Sqrt(jumpHeight * -2f * gravity);
 	}
-
-	// Rotation
 
 	void HandleRotation()
 	{
@@ -143,40 +170,73 @@ public class CatMovement : MonoBehaviour
 	void ProcessPlatformEdges()
 	{
 		if (_isJumping) return;
+
 		GameObject[] allPlatformEdges = GameObject.FindGameObjectsWithTag("PlatformEdge");
 		float bestDist = float.MaxValue;
 		Vector3 bestPoint = Vector3.zero;
-		foreach (GameObject platform in allPlatformEdges)
+
+		Vector3 predictedPosition = transform.position + transform.forward * 0.3f;
+		// If there's a platform surface below and in front of the player
+		if (Physics.Raycast(predictedPosition + Vector3.down * 0.1f, Vector3.ProjectOnPlane(transform.forward, Vector3.up) * 0.3f + Vector3.down, out RaycastHit hit, 1.3f, LayerMask.GetMask("Platform")))
 		{
-			if (platform.transform.position.y < transform.position.y + 0.5f) continue; // only consider platforms above us
-			LineRenderer line = platform.GetComponent<LineRenderer>();
-			Vector3[] positions = new Vector3[line.positionCount];
-			line.GetPositions(positions);
-			for (int i = 0; i < positions.Length; i++)
+			// only consider jumping down to flat surfaces
+			if (hit.normal.y > 0.85f)
 			{
-				positions[i] += platform.transform.position;
-			}
-			//find closest line segment to player
-			(int index, Vector3 point, float dist) closestIndex = FindNearestSegmentIndex(positions, transform.position);
-			if (closestIndex.dist < bestDist)
-			{
-				bestDist = closestIndex.dist;
-				bestPoint = closestIndex.point;
+				// penalize juumping down
+				bestDist = hit.distance * 2;
+				bestPoint = hit.point;
+
 			}
 		}
-		if (bestDist < 3f)
+		if (velocityMultiplier != 0)
 		{
-			jumpPrompt.gameObject.SetActive(true);
-			jumpPrompt.position = bestPoint;
-			_jumpAvailable = true;
-			_jumpPoint = bestPoint;
+			foreach (GameObject platform in allPlatformEdges)
+			{
+				if (platform.transform.position.y < transform.position.y + minJumpHeight) continue; // only platforms above - should remove later for horizontal jumps
+				LineRenderer line = platform.GetComponent<LineRenderer>();
+				Vector3[] positions = new Vector3[line.positionCount];
+				line.GetPositions(positions);
+				for (int i = 0; i < positions.Length; i++)
+				{
+
+					positions[i] = platform.transform.TransformPoint(positions[i]);
+				}
+				//find closest line segment to player
+				(int index, Vector3 point, float dist) closestSegment = FindNearestLineSegment(positions, predictedPosition);
+				float dot = Vector3.Dot((closestSegment.point - transform.position).normalized, transform.forward);
+				closestSegment.dist *= dot < 0.1f ? 2f : 1f; // penalize points that aren't mostly in front of the player
+				if (closestSegment.dist < bestDist)
+				{
+					bestDist = closestSegment.dist;
+					bestPoint = closestSegment.point;
+				}
+			}
+		}
+		// set jump prompt based on best point
+		if (bestDist < maxJumpDistance)
+		{
+			SetJumpPromptAndTarget(bestPoint);
 		}
 		else
 		{
-			jumpPrompt.gameObject.SetActive(false);
-			_jumpAvailable = false;
+			SetJumpPromptAndTarget();
+
 		}
+
 	}
+	void SetJumpPromptAndTarget()
+	{
+		jumpPrompt.gameObject.SetActive(false);
+		_jumpAvailable = false;
+	}
+	void SetJumpPromptAndTarget(Vector3 position)
+	{
+		_jumpTarget = position;
+		_jumpAvailable = true;
+		jumpPrompt.position = position;
+		jumpPrompt.gameObject.SetActive(true);
+	}
+
 	public static Vector3 ClosestPointOnSegment(Vector3 a, Vector3 b, Vector3 p)
 	{
 		Vector3 ab = b - a;
@@ -185,7 +245,7 @@ public class CatMovement : MonoBehaviour
 		return a + ab * t;
 	}
 
-	public static (int index, Vector3 point, float dist) FindNearestSegmentIndex(Vector3[] points, Vector3 position)
+	public static (int index, Vector3 point, float dist) FindNearestLineSegment(Vector3[] points, Vector3 position)
 	{
 		float bestDist = float.MaxValue;
 		int bestIndex = -1;
@@ -198,11 +258,12 @@ public class CatMovement : MonoBehaviour
 			Vector3 b = points[nextIndex];
 
 			Vector3 closest = ClosestPointOnSegment(a, b, position);
-			float dist = (position - closest).sqrMagnitude;
+			float squareDist = (position - closest).sqrMagnitude;
 
-			if (dist < bestDist)
+			if (squareDist < bestDist)
 			{
-				bestDist = dist;
+				//bestDist = Mathf.Sqrt(squareDist);
+				bestDist = squareDist;
 				bestIndex = i;
 				bestPoint = closest;
 			}
