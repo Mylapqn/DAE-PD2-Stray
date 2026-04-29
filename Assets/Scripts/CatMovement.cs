@@ -1,4 +1,6 @@
+using System.Linq;
 using UnityEngine;
+using UnityEngine.UIElements;
 using static UnityEditor.PlayerSettings;
 
 [RequireComponent(typeof(PlayerInputHandler))]
@@ -20,6 +22,7 @@ public class CatMovement : MonoBehaviour
 	[SerializeField] Transform jumpPrompt;
 	[SerializeField] float minJumpHeight = 0.5f;
 	[SerializeField] float maxJumpDistance = 4f;
+	[SerializeField] float jumpArcHeight = 0.5f;
 
 	[Header("Camera")]
 	[SerializeField] Transform cameraTransform; // drag main camera here
@@ -30,12 +33,16 @@ public class CatMovement : MonoBehaviour
 	CharacterController controller;
 
 	Vector3 velocity;
+	Vector3 facingDirection;
+	bool stuckAtEdge = false;
 	float velocityMultiplier = 1;
 	float verticalSpeed;
 	bool _jumpAvailable = false;
 	Vector3 _jumpTarget = Vector3.zero;
+	Vector3 _jumpStart = Vector3.zero;
 	bool _isJumping = false;
 	float jumpTime = 0f;
+	float maxJumpTime = 0f;
 
 
 
@@ -54,7 +61,9 @@ public class CatMovement : MonoBehaviour
 		HandleJump();
 
 		// Single Move call per frame — combines XZ + Y
-		CollisionFlags collision = controller.Move((velocity * velocityMultiplier + Vector3.up * verticalSpeed) * Time.deltaTime);
+		Vector3 finalVelocity = (velocity) * velocityMultiplier;
+		Vector3 finalMove = (finalVelocity + Vector3.up * verticalSpeed) * Time.deltaTime;
+		CollisionFlags collision = controller.Move(finalMove);
 		if (collision.HasFlag(CollisionFlags.Sides))
 		{
 			//velocity = Vector3.zero;
@@ -65,6 +74,7 @@ public class CatMovement : MonoBehaviour
 
 	void HandleMovement()
 	{
+		stuckAtEdge = false;
 		if (!_isJumping)
 		{
 			Vector2 raw = input.MoveInput;
@@ -80,12 +90,35 @@ public class CatMovement : MonoBehaviour
 
 			float rate = targetVelocity.magnitude > 0.01f ? acceleration : deceleration;
 			velocity = Vector3.MoveTowards(velocity, targetVelocity, rate * Time.deltaTime);
+			facingDirection = Vector3.MoveTowards(facingDirection, targetDirection, rate * Time.deltaTime);
+			facingDirection.y = 0;
 
-			Vector3 predictedPosition = transform.position + transform.forward * 0.2f;
+			Vector3 predictedPosition = transform.position + targetVelocity * 0.1f;
+
 			// If there's no platform surface below and in front of the player, stop movement to prevent walking off edges
 			if (!Physics.Raycast(predictedPosition + Vector3.up * 0.2f, Vector3.down, out RaycastHit hit, 0.4f, LayerMask.GetMask("Platform")))
 			{
-				velocityMultiplier = 0;
+				//get nearest line segment on current platform
+				GameObject[] filteredEdges = GameObject.FindGameObjectsWithTag("PlatformEdge")
+					.Where(platform => platform.transform.position.y > transform.position.y - .1f && platform.transform.position.y < transform.position.y + .1f)
+					.ToArray();
+				(int index, Vector3 point, float dist) closestPlatform = FindNearestLineSegmentFromPlatforms(filteredEdges, transform.position);
+				if (closestPlatform.dist < 0.2f)
+				{
+					Vector3 velDir = velocity.normalized;
+					float velMag = velocity.magnitude;
+					// remove velocity component towards edge to prevent walking off
+					Vector3 toEdge = (closestPlatform.point - transform.position);
+					toEdge.y = 0f;
+					toEdge.Normalize();
+					float dot = Vector3.Dot(toEdge, velDir);
+					if (dot > 0)
+					{
+						velDir -= toEdge * dot * 1.1f;
+					}
+					velocity = velDir * velMag;
+					stuckAtEdge = true;
+				}
 			}
 			else
 			{
@@ -126,22 +159,28 @@ public class CatMovement : MonoBehaviour
 				_jumpAvailable = false;
 				jumpPrompt.gameObject.SetActive(false);
 				// Move jump target up to arc over edge
-				_jumpTarget.y += 0.2f;
+				_jumpTarget.y += 0.1f;
 				// Move jump target away from player to ensure reaching platform
-				Vector3 diff = _jumpTarget - transform.position;
-				diff.y = 0f;
-				_jumpTarget += diff.normalized * 0.5f;
+				Vector3 horizontalDiff = _jumpTarget - transform.position;
+				horizontalDiff.y = 0f;
+				_jumpTarget += horizontalDiff.normalized * 0.3f;
+				_jumpStart = transform.position;
+				maxJumpTime = Vector3.Distance(_jumpStart, _jumpTarget) * 0.2f;
 			}
 		}
 
 		if (_isJumping)
 		{
-			velocity = _jumpTarget - transform.position;
-			velocity *= 3f;
+			jumpTime += Time.deltaTime;
+			float jumpProgress = jumpTime / maxJumpTime;
+			Vector3 arcOffset = Vector3.up * Mathf.Sin(jumpProgress * Mathf.PI) * jumpArcHeight;
+			Vector3 currentTarget = Vector3.Lerp(_jumpStart, _jumpTarget, jumpProgress) + arcOffset;
+			velocity = currentTarget - transform.position;
+			velocity *= 10;
 			verticalSpeed = velocity.y;
 			velocity.y = 0f;
-			jumpTime += Time.deltaTime;
-			if (Vector3.SqrMagnitude(_jumpTarget - transform.position) < 0.1f || jumpTime >= 4f)
+			facingDirection = velocity.normalized;
+			if (jumpProgress >= 1)
 			{
 				// End jump
 				controller.excludeLayers = 0; // re-enable collisions
@@ -157,9 +196,11 @@ public class CatMovement : MonoBehaviour
 	void HandleRotation()
 	{
 		// Only rotate when actually moving
-		if (velocity.magnitude < 0.1f) return;
+		if (facingDirection.magnitude < 0.01f) return;
+		Vector3 finalDirection = facingDirection.normalized;
+		if (_isJumping) finalDirection += Vector3.up * verticalSpeed;
 
-		Quaternion targetRotation = Quaternion.LookRotation(velocity.normalized);
+		Quaternion targetRotation = Quaternion.LookRotation(finalDirection);
 		transform.rotation = Quaternion.Slerp(
 			transform.rotation,
 			targetRotation,
@@ -188,28 +229,16 @@ public class CatMovement : MonoBehaviour
 
 			}
 		}
-		if (velocityMultiplier != 0)
+		//if player is not at platform edge
+		if (!stuckAtEdge)
 		{
-			foreach (GameObject platform in allPlatformEdges)
+			//go through all platform edges above, available for jump
+			GameObject[] filteredEdges = allPlatformEdges.Where(platform => platform.transform.position.y > transform.position.y + minJumpHeight).ToArray();
+			(int index, Vector3 point, float dist) closestPlatform = FindNearestLineSegmentFromPlatforms(filteredEdges, predictedPosition);
+			if (closestPlatform.dist < bestDist)
 			{
-				if (platform.transform.position.y < transform.position.y + minJumpHeight) continue; // only platforms above - should remove later for horizontal jumps
-				LineRenderer line = platform.GetComponent<LineRenderer>();
-				Vector3[] positions = new Vector3[line.positionCount];
-				line.GetPositions(positions);
-				for (int i = 0; i < positions.Length; i++)
-				{
-
-					positions[i] = platform.transform.TransformPoint(positions[i]);
-				}
-				//find closest line segment to player
-				(int index, Vector3 point, float dist) closestSegment = FindNearestLineSegment(positions, predictedPosition);
-				float dot = Vector3.Dot((closestSegment.point - transform.position).normalized, transform.forward);
-				closestSegment.dist *= dot < 0.1f ? 2f : 1f; // penalize points that aren't mostly in front of the player
-				if (closestSegment.dist < bestDist)
-				{
-					bestDist = closestSegment.dist;
-					bestPoint = closestSegment.point;
-				}
+				bestDist = closestPlatform.dist;
+				bestPoint = closestPlatform.point;
 			}
 		}
 		// set jump prompt based on best point
@@ -269,6 +298,42 @@ public class CatMovement : MonoBehaviour
 			}
 		}
 
+		return (bestIndex, bestPoint, bestDist);
+	}
+
+	public (int index, Vector3 point, float dist) FindNearestLineSegmentFromPlatforms(GameObject[] platformEdges, Vector3 comparisonPosition)
+	{
+		float bestDist = float.MaxValue;
+		int bestIndex = -1;
+		Vector3 bestPoint = Vector3.zero;
+		foreach (GameObject platform in platformEdges)
+		{
+			LineRenderer line = platform.GetComponent<LineRenderer>();
+			Vector3[] linePositions = new Vector3[line.positionCount];
+			line.GetPositions(linePositions);
+			for (int i = 0; i < linePositions.Length; i++)
+			{
+
+				linePositions[i] = platform.transform.TransformPoint(linePositions[i]);
+			}
+			//find closest line segment to player
+			(int index, Vector3 point, float dist) closestSegment = FindNearestLineSegment(linePositions, comparisonPosition);
+			float dot = Vector3.Dot((closestSegment.point - transform.position).normalized, transform.forward);
+			closestSegment.dist *= dot < 0.1f ? 2f : 1f; // penalize points that aren't mostly in front of the player
+			if (closestSegment.dist < bestDist)
+			{
+				if (Physics.Linecast(closestSegment.point + Vector3.up * 0.2f, comparisonPosition + Vector3.up * 0.1f, out RaycastHit hit, LayerMask.GetMask("Platform")))
+				{
+					// if there's a platform in the way, ignore this jump point
+				}
+				else
+				{
+					bestDist = closestSegment.dist;
+					bestPoint = closestSegment.point;
+					bestIndex = closestSegment.index;
+				}
+			}
+		}
 		return (bestIndex, bestPoint, bestDist);
 	}
 }

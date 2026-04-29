@@ -662,15 +662,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6841233325994429610, guid: 7f31e84d1db04534cb3ab912d054dabf, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 1.537
+      value: 1.535
       objectReference: {fileID: 0}
     - target: {fileID: 6841233325994429610, guid: 7f31e84d1db04534cb3ab912d054dabf, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0.204
+      value: 0.202
       objectReference: {fileID: 0}
     - target: {fileID: 6841233325994429610, guid: 7f31e84d1db04534cb3ab912d054dabf, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 1.495
+      value: 1.487
       objectReference: {fileID: 0}
     - target: {fileID: 6841233325994429610, guid: 7f31e84d1db04534cb3ab912d054dabf, type: 3}
       propertyPath: m_LocalRotation.w
@@ -1282,6 +1282,10 @@ PrefabInstance:
     - target: {fileID: 4398736297589009341, guid: 90553cc585b6bb74d81217047b1b8353, type: 3}
       propertyPath: maxCameraDistance
       value: 2.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 4398736297589009341, guid: 90553cc585b6bb74d81217047b1b8353, type: 3}
+      propertyPath: positionSmoothing
+      value: 47.58
       objectReference: {fileID: 0}
     - target: {fileID: 6123067680107296180, guid: 90553cc585b6bb74d81217047b1b8353, type: 3}
       propertyPath: field of view

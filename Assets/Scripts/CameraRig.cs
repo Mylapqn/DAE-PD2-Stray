@@ -12,6 +12,7 @@ public class CameraRig : MonoBehaviour
 	[SerializeField] float cameraHeight = 0.5f;
 	[SerializeField] float cameraZoomInSpeed = 10f;
 	[SerializeField] float cameraZoomOutSpeed = 3f;
+	[SerializeField] float positionSmoothing = 0.1f;
 	public Transform cameraOrbitCenter;
 	public Camera cam;
 	float _pitch;
@@ -34,7 +35,14 @@ public class CameraRig : MonoBehaviour
 	}
 	private void LateUpdate()
 	{
-		transform.position = targetTransform.position;
+		HandlePosition();
+	}
+
+	void HandlePosition()
+	{
+		Vector3 targetPosition = targetTransform.position;
+		transform.position = targetPosition;
+		//transform.position = Vector3.Lerp(transform.position, targetPosition, 1 - positionSmoothing * Time.deltaTime);
 	}
 
 	void HandleRotation()
