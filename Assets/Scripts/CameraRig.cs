@@ -9,10 +9,11 @@ public class CameraRig : MonoBehaviour
 	[SerializeField] float minPitch = -30f;
 	[SerializeField] float maxPitch = 60f;
 	[SerializeField] float maxCameraDistance = 2f;
+	[SerializeField] float minCameraDistance = 0.5f;
 	[SerializeField] float cameraHeight = 0.5f;
+	[SerializeField] float minCameraHeight = 0.2f;
 	[SerializeField] float cameraZoomInSpeed = 10f;
 	[SerializeField] float cameraZoomOutSpeed = 3f;
-	[SerializeField] float positionSmoothing = 0.1f;
 	public Transform cameraOrbitCenter;
 	public Camera cam;
 	float _pitch;
@@ -21,6 +22,7 @@ public class CameraRig : MonoBehaviour
 	float _targetYaw;
 	float _cameraDistance;
 	float _targetCameraDistance;
+	float _cameraDistanceRatio;
 	// Start is called once before the first execution of Update after the MonoBehaviour is created
 	void Start()
 	{
@@ -30,7 +32,7 @@ public class CameraRig : MonoBehaviour
 	void Update()
 	{
 		HandleRotation();
-		cameraOrbitCenter.localPosition = Vector3.up * cameraHeight;
+		cameraOrbitCenter.localPosition = Vector3.up * Mathf.Lerp(minCameraHeight, cameraHeight, _cameraDistanceRatio);
 		HandleCameraDistance();
 	}
 	private void LateUpdate()
@@ -42,7 +44,6 @@ public class CameraRig : MonoBehaviour
 	{
 		Vector3 targetPosition = targetTransform.position;
 		transform.position = targetPosition;
-		//transform.position = Vector3.Lerp(transform.position, targetPosition, 1 - positionSmoothing * Time.deltaTime);
 	}
 
 	void HandleRotation()
@@ -60,12 +61,14 @@ public class CameraRig : MonoBehaviour
 		if (Physics.Raycast(cameraOrbitCenter.position, -cameraOrbitCenter.forward, out RaycastHit hitInfo, maxCameraDistance))
 		{
 			float newDistance = hitInfo.distance - 0.2f;
-			newDistance = Mathf.Clamp(newDistance, 0.5f, maxCameraDistance);
+			newDistance = Mathf.Clamp(newDistance, minCameraDistance, maxCameraDistance);
+			_cameraDistanceRatio = newDistance / maxCameraDistance;
 			_targetCameraDistance = newDistance;
 		}
 		else
 		{
 			_targetCameraDistance = maxCameraDistance;
+			_cameraDistanceRatio = 1f;
 		}
 		if (_cameraDistance > _targetCameraDistance)
 		{
