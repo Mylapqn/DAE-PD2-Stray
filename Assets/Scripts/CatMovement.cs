@@ -49,7 +49,7 @@ public class CatMovement : MonoBehaviour
 
 	Vector3 _raycastYOffset = Vector3.up * 0.1f; // to prevent raycast hitting ground
 
-
+	public bool IsJumping => _isJumping;
 
 
 	void Awake()
