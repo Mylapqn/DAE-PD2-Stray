@@ -14,6 +14,8 @@ public class CameraRig : MonoBehaviour
 	[SerializeField] float minCameraHeight = 0.2f;
 	[SerializeField] float cameraZoomInSpeed = 10f;
 	[SerializeField] float cameraZoomOutSpeed = 3f;
+	[SerializeField] LayerMask _cameraBlockingMask;
+	[SerializeField] LayerMask _cameraBlockingInsideBarrel;
 	public Transform cameraOrbitCenter;
 	public Camera cam;
 	float _pitch;
@@ -23,6 +25,7 @@ public class CameraRig : MonoBehaviour
 	float _cameraDistance;
 	float _targetCameraDistance;
 	float _cameraDistanceRatio;
+	public CatMovement catMovement;
 	// Start is called once before the first execution of Update after the MonoBehaviour is created
 	void Start()
 	{
@@ -58,7 +61,7 @@ public class CameraRig : MonoBehaviour
 	}
 	void HandleCameraDistance()
 	{
-		if (Physics.Raycast(cameraOrbitCenter.position, -cameraOrbitCenter.forward, out RaycastHit hitInfo, maxCameraDistance))
+		if (Physics.Raycast(cameraOrbitCenter.position, -cameraOrbitCenter.forward, out RaycastHit hitInfo, maxCameraDistance, catMovement.IsInBarrel ? _cameraBlockingInsideBarrel : _cameraBlockingMask))
 		{
 			float newDistance = hitInfo.distance - 0.2f;
 			newDistance = Mathf.Clamp(newDistance, minCameraDistance, maxCameraDistance);

@@ -26,9 +26,14 @@ public class CatMovement : MonoBehaviour
 	[SerializeField] float minJumpHeight = 0.5f;
 	[SerializeField] float maxJumpDistance = 4f;
 	[SerializeField] float maxJumpArcHeight = 0.5f;
+	[SerializeField] LayerMask _platformLayerMask;
 
 	[Header("Camera")]
-	[SerializeField] Transform cameraTransform; // drag main camera here
+	[SerializeField] Transform cameraTransform;
+
+	//Public
+	public bool IsJumping => _isJumping;
+	public Vector3 Velocity => velocity;
 
 	// Private
 
@@ -46,10 +51,11 @@ public class CatMovement : MonoBehaviour
 	float jumpTime = 0f;
 	float maxJumpTime = 0f;
 	float _currentJumpArcHeight = 0f;
+	public bool IsInBarrel = false;
 
 	Vector3 _raycastYOffset = Vector3.up * 0.1f; // to prevent raycast hitting ground
 
-	public bool IsJumping => _isJumping;
+
 
 
 	void Awake()
@@ -86,6 +92,7 @@ public class CatMovement : MonoBehaviour
 			Vector3 targetDirection = (camForward * raw.y + camRight * raw.x);
 
 			Vector3 targetVelocity = targetDirection * moveSpeed;
+			if (IsInBarrel) targetVelocity *= 0.3f;
 
 
 
@@ -105,7 +112,7 @@ public class CatMovement : MonoBehaviour
 	bool TestCurrentPlatformEdge(Vector3 predictedPosition)
 	{
 		// If there's no platform surface below and in front of the player, stop movement to prevent walking off edges
-		if (!Physics.Raycast(predictedPosition + Vector3.up * 0.2f, Vector3.down, out RaycastHit hit, 0.4f, LayerMask.GetMask("Platform")))
+		if (!Physics.Raycast(predictedPosition + Vector3.up * 0.1f, Vector3.down, out RaycastHit hit, 0.2f, _platformLayerMask))
 		{
 			//get nearest line segment on the same height (current platform)
 			GameObject[] edgesOnSameLevel = GameObject.FindGameObjectsWithTag("PlatformEdge")
@@ -273,16 +280,16 @@ public class CatMovement : MonoBehaviour
 		Vector3 predictedPosition = transform.position + transform.forward * 0.25f;
 
 		//If there's free space in front of the player, consider jumping down
-		if (!Physics.Raycast(transform.position + _raycastYOffset, predictedPosition + _raycastYOffset, 0.4f, LayerMask.GetMask("Platform")))
+		if (!Physics.Raycast(transform.position + _raycastYOffset, predictedPosition + _raycastYOffset, 0.4f, _platformLayerMask))
 		{
 			// If there's a platform surface below and in front of the player
-			if (Physics.Raycast(predictedPosition + Vector3.up * 0.1f, Vector3.ProjectOnPlane(transform.forward, Vector3.up) * 0.3f + Vector3.down, out RaycastHit hit, 1.3f, LayerMask.GetMask("Platform")))
+			if (Physics.Raycast(predictedPosition + Vector3.up * 0.1f, Vector3.ProjectOnPlane(transform.forward, Vector3.up) * 0.3f + Vector3.down, out RaycastHit hit, 2f, _platformLayerMask))
 			{
 				// ignore very short drops, and only consider jumping down to flat surfaces
 				if (hit.distance > 0.2f && hit.normal.y > 0.85f)
 				{
 					// penalize jumping down
-					bestDist = hit.distance * 1.5f;
+					bestDist = hit.distance * 1.4f;
 					bestPoint = hit.point;
 
 				}
@@ -361,7 +368,7 @@ public class CatMovement : MonoBehaviour
 				if (requireLineOfSight)
 				{
 					// if there's a platform in the way, ignore this jump point
-					if (Physics.Linecast(transform.position + _raycastYOffset, closestSegment.point + _raycastYOffset, out RaycastHit hit, LayerMask.GetMask("Platform")))
+					if (Physics.Linecast(transform.position + _raycastYOffset, closestSegment.point + _raycastYOffset, out RaycastHit hit, _platformLayerMask))
 					{
 						continue;
 					}
@@ -371,7 +378,7 @@ public class CatMovement : MonoBehaviour
 					// if there is no gap inbetween, ignore this jump point
 					// bias the midpoint towards the target because gaps are more likely to be just before the edge of the platform
 					Vector3 midPoint = Vector3.Lerp(transform.position, closestSegment.point, 0.8f);
-					if (Physics.Raycast(midPoint + Vector3.up * maxJumpArcHeight, Vector3.down, out RaycastHit hit2, maxJumpArcHeight + 0.4f, LayerMask.GetMask("Platform")))
+					if (Physics.Raycast(midPoint + Vector3.up * maxJumpArcHeight, Vector3.down, out RaycastHit hit2, maxJumpArcHeight + 0.4f, _platformLayerMask))
 					{
 						continue;
 					}
