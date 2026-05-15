@@ -14,7 +14,7 @@ GameObject:
   - component: {fileID: 1250371234573922358}
   m_Layer: 0
   m_Name: cat
-  m_TagString: Untagged
+  m_TagString: Player
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -76,10 +76,18 @@ MonoBehaviour:
   acceleration: 8
   deceleration: 8
   rotationSpeed: 12
-  jumpHeight: 0.5
+  maxJumpHeight: 1.5
   gravity: -9.81
   groundedGravity: -2
+  jumpPrompt: {fileID: 0}
+  minJumpHeight: 0.5
+  maxJumpDistance: 4
+  maxJumpArcHeight: 0.5
+  _platformLayerMask:
+    serializedVersion: 2
+    m_Bits: 0
   cameraTransform: {fileID: 0}
+  IsInBarrel: 0
 --- !u!114 &1250371234573922358
 MonoBehaviour:
   m_ObjectHideFlags: 0

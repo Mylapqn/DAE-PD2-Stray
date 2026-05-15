@@ -63,6 +63,12 @@ public class CatMovement : MonoBehaviour
 		input = GetComponent<PlayerInputHandler>();
 		controller = GetComponent<CharacterController>();
 	}
+
+	private void Start()
+	{
+		UnityEngine.Cursor.lockState = CursorLockMode.Locked;
+		UnityEngine.Cursor.visible = false;
+	}
 	void Update()
 	{
 		HandleGravity();
@@ -115,8 +121,8 @@ public class CatMovement : MonoBehaviour
 		if (!Physics.Raycast(predictedPosition + Vector3.up * 0.1f, Vector3.down, out RaycastHit hit, 0.2f, _platformLayerMask))
 		{
 			//get nearest line segment on the same height (current platform)
-			GameObject[] edgesOnSameLevel = GameObject.FindGameObjectsWithTag("PlatformEdge")
-				.Where(platform => platform.transform.position.y > transform.position.y - .1f && platform.transform.position.y < transform.position.y + .1f)
+			LineRenderer[] edgesOnSameLevel = GameObject.FindGameObjectsWithTag("PlatformEdge")
+				.Where(platform => platform.transform.position.y > transform.position.y - .1f && platform.transform.position.y < transform.position.y + .1f).Select(go => go.GetComponent<LineRenderer>())
 				.ToArray();
 			LinePoint closestPlatform = FindNearestPointOnPlatformEdges(edgesOnSameLevel, transform.position, requireLineOfSight: false, requireGap: false);
 			if (closestPlatform.dist < 0.2f)
@@ -270,9 +276,10 @@ public class CatMovement : MonoBehaviour
 		if (_isJumping) return;
 
 		float maxDetectionDistance = 5f;
-		GameObject[] nearbyPlatformEdges = GameObject.FindGameObjectsWithTag("PlatformEdge")
-			.Where(platform => Vector3.SqrMagnitude(platform.transform.position - transform.position) < (maxDetectionDistance * maxDetectionDistance))
-			.ToArray();
+		Collider[] nearbyPlatforms = Physics.OverlapSphere(transform.position, maxDetectionDistance, _platformLayerMask);
+		if (nearbyPlatforms.Length < 0) return;
+		LineRenderer[] nearbyPlatformEdges = nearbyPlatforms.Select(x => x.GetComponent<Platform>().lineRenderer).ToArray();
+		if (nearbyPlatformEdges.Length < 0) return;
 		float bestDist = float.MaxValue;
 		Vector3 bestPoint = Vector3.zero;
 
@@ -299,7 +306,7 @@ public class CatMovement : MonoBehaviour
 		if (!standingAtEdge)
 		{
 			//go through all platform edges above, available for jump
-			GameObject[] platformEdgesAbove = nearbyPlatformEdges.Where(platform => platform.transform.position.y > transform.position.y + minJumpHeight).ToArray();
+			LineRenderer[] platformEdgesAbove = nearbyPlatformEdges.Where(platform => platform.transform.position.y > transform.position.y + minJumpHeight).ToArray();
 			LinePoint closestPlatform = FindNearestPointOnPlatformEdges(platformEdgesAbove, predictedPosition, requireLineOfSight: true, requireGap: false);
 			if (closestPlatform.dist < bestDist)
 			{
@@ -310,8 +317,8 @@ public class CatMovement : MonoBehaviour
 		// consider jumping across gaps on same level
 		{
 			// go through all platform edges at the same height, available for jump
-			GameObject[] platformEdgesSameLevel = nearbyPlatformEdges.Where(platform => Mathf.Abs(platform.transform.position.y - transform.position.y) < minJumpHeight).ToArray();
-			LinePoint closestPlatform = FindNearestPointOnPlatformEdges(platformEdgesSameLevel, transform.position, requireLineOfSight: false, requireGap: true);
+			LineRenderer[] platformEdgesSameLevel = nearbyPlatformEdges.Where(platform => Mathf.Abs(platform.transform.position.y - transform.position.y) < minJumpHeight).ToArray();
+			LinePoint closestPlatform = FindNearestPointOnPlatformEdges(platformEdgesSameLevel, transform.position, requireLineOfSight: true, requireGap: true);
 			if (closestPlatform.dist < bestDist)
 			{
 				bestDist = closestPlatform.dist;
@@ -345,14 +352,13 @@ public class CatMovement : MonoBehaviour
 	}
 
 	// finds nearest point on given platforms satisfying jump conditions
-	LinePoint FindNearestPointOnPlatformEdges(GameObject[] platformEdges, Vector3 comparisonPosition, bool requireLineOfSight, bool requireGap)
+	LinePoint FindNearestPointOnPlatformEdges(LineRenderer[] platformEdges, Vector3 comparisonPosition, bool requireLineOfSight, bool requireGap)
 	{
 		float bestDist = float.MaxValue;
 		int bestIndex = -1;
 		Vector3 bestPoint = Vector3.zero;
-		foreach (GameObject platform in platformEdges)
+		foreach (LineRenderer line in platformEdges)
 		{
-			LineRenderer line = platform.GetComponent<LineRenderer>();
 			if (line == null) continue;
 			LinePoint closestSegment = line.NearestLineRendererSegment(comparisonPosition);
 
